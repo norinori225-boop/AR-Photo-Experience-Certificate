@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>救急フェア2026 AR撮影</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      background: #111;
+      color: #fff;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .stage {
+      position: relative;
+      width: min(100vw, calc(100svh * 768 / 1376));
+      height: min(100svh, calc(100vw * 1376 / 768));
+      background: #111;
+      overflow: hidden;
+    }
+
+    video,
+    .frame,
+    canvas,
+    .flash {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    video {
+      object-fit: cover;
+    }
+
+    .frame {
+      pointer-events: none;
+      object-fit: contain;
+      z-index: 2;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    .flash {
+      z-index: 3;
+      pointer-events: none;
+      background: #fff;
+      opacity: 0;
+    }
+
+    .flash.is-active {
+      animation: shutter .34s ease-out;
+    }
+
+    @keyframes shutter {
+      0% { opacity: 0; }
+      22% { opacity: .88; }
+      100% { opacity: 0; }
+    }
+
+    .controls {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 4;
+      display: flex;
+      justify-content: center;
+      padding: 0 14px;
+    }
+
+    button {
+      width: 76px;
+      height: 76px;
+      border: 5px solid rgba(255, 255, 255, .92);
+      border-radius: 999px;
+      background: #ffe28a;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .36);
+      color: transparent;
+      cursor: pointer;
+    }
+
+    button::after {
+      content: "";
+      display: block;
+      width: 52px;
+      height: 52px;
+      margin: auto;
+      border-radius: inherit;
+      background: #fff;
+      box-shadow: inset 0 0 0 3px #f2c45f;
+    }
+
+    button:disabled {
+      opacity: .7;
+    }
+
+    .message {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      top: max(16px, env(safe-area-inset-top));
+      z-index: 5;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, .66);
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .message[hidden] {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="AR撮影画面">
+    <video id="camera" autoplay playsinline muted></video>
+    <img class="frame" id="frame" src="./救急フェア2026_AR撮影フレーム_中央透明.png" alt="">
+    <canvas id="canvas" width="768" height="1376"></canvas>
+    <div class="flash" id="flash"></div>
+  </main>
+  <p class="message" id="message">カメラを起動しています</p>
+  <div class="controls">
+    <button id="shoot" type="button" aria-label="撮影して保存">撮影</button>
+  </div>
+
+  <script>
+    const video = document.getElementById('camera');
+    const frame = document.getElementById('frame');
+    const canvas = document.getElementById('canvas');
+    const message = document.getElementById('message');
+    const shoot = document.getElementById('shoot');
+    const flash = document.getElementById('flash');
+    const ctx = canvas.getContext('2d');
+
+    let objectUrl = '';
+
+    function showMessage(text, autoHide = true) {
+      message.textContent = text;
+      message.hidden = false;
+      if (autoHide) {
+        window.clearTimeout(showMessage.timer);
+        showMessage.timer = window.setTimeout(() => {
+          message.hidden = true;
+        }, 1800);
+      }
+    }
+
+    async function startCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        showMessage('このブラウザではカメラを使用できません。', false);
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1080 },
+            height: { ideal: 1920 }
+          },
+          audio: false
+        });
+        video.srcObject = stream;
+        message.hidden = true;
+      } catch (error) {
+        showMessage('カメラを使用できません。HTTPSのURLで開き、ブラウザのカメラ許可を確認してください。', false);
+      }
+    }
+
+    function drawCoverVideo() {
+      const targetW = canvas.width;
+      const targetH = canvas.height;
+      const sourceW = video.videoWidth;
+      const sourceH = video.videoHeight;
+      const scale = Math.max(targetW / sourceW, targetH / sourceH);
+      const drawW = sourceW * scale;
+      const drawH = sourceH * scale;
+      const dx = (targetW - drawW) / 2;
+      const dy = (targetH - drawH) / 2;
+
+      ctx.clearRect(0, 0, targetW, targetH);
+      ctx.drawImage(video, dx, dy, drawW, drawH);
+    }
+
+    function triggerDownload(blob) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.href = objectUrl;
+      link.download = `救急フェア2026_AR撮影_${stamp}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    function playShutter() {
+      flash.classList.remove('is-active');
+      void flash.offsetWidth;
+      flash.classList.add('is-active');
+    }
+
+    shoot.addEventListener('click', () => {
+      if (!video.videoWidth || shoot.disabled) return;
+
+      shoot.disabled = true;
+      playShutter();
+      drawCoverVideo();
+      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob((blob) => {
+        shoot.disabled = false;
+        if (!blob) {
+          showMessage('保存用画像を作成できませんでした。', false);
+          return;
+        }
+        triggerDownload(blob);
+        showMessage('撮影しました。保存を開始しています。');
+      }, 'image/png');
+    });
+
+    startCamera();
+  </script>
+</body>
+</html>
